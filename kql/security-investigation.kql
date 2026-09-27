@@ -1,0 +1,105 @@
+// ============================================================
+// Azure SOC Incident Response Lab
+// KQL Security Investigation
+// Dataset: SecurityEvent
+// ============================================================
+
+
+// 1. Review sample security events
+SecurityEvent
+| take 10
+
+
+// 2. Identify failed authentication attempts
+// Windows Event ID 4625 = failed logon
+SecurityEvent
+| where EventID == 4625
+| project TimeGenerated, Account, Computer, IpAddress, LogonType, Activity
+| order by TimeGenerated asc
+
+
+// 3. Count failed logons by account
+SecurityEvent
+| where EventID == 4625
+| summarize FailedLogons = count() by Account
+| order by FailedLogons desc
+
+
+// 4. Investigate activity associated with the suspicious account
+SecurityEvent
+| where Account == "sara.khan"
+| project TimeGenerated, EventID, Account, Computer, IpAddress,
+          LogonType, Activity, ProcessName
+| order by TimeGenerated asc
+
+
+// 5. Correlate authentication activity from the suspicious source IP
+SecurityEvent
+| where Account == "sara.khan"
+| where IpAddress == "203.0.113.77"
+| where EventID in (4624, 4625)
+| project TimeGenerated, EventID, Account, Computer, IpAddress,
+          LogonType, Activity
+| order by TimeGenerated asc
+
+
+// 6. Summarize failed and successful authentication activity
+SecurityEvent
+| where Account == "sara.khan"
+| where IpAddress == "203.0.113.77"
+| summarize
+    FailedAttempts = countif(EventID == 4625),
+    SuccessfulLogons = countif(EventID == 4624),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated)
+
+
+// 7. Identify successful authentication from the suspicious source
+SecurityEvent
+| where Account == "sara.khan"
+| where IpAddress == "203.0.113.77"
+| where EventID == 4624
+| project TimeGenerated, EventID, Account, Computer, IpAddress,
+          LogonType, Activity, ProcessName
+
+
+// 8. Review endpoint activity immediately following authentication
+SecurityEvent
+| where Computer == "WKSTN-103"
+| where TimeGenerated >= datetime(2026-09-23 14:14:16)
+| where TimeGenerated <= datetime(2026-09-23 15:00:00)
+| project TimeGenerated, EventID, Account, Computer, IpAddress,
+          LogonType, Activity, ProcessName, TargetAccount
+| order by TimeGenerated asc
+
+
+// 9. Identify special privileges assigned to the suspicious account
+// Windows Event ID 4672 = special privileges assigned to new logon
+SecurityEvent
+| where Computer == "WKSTN-103"
+| where Account == "sara.khan"
+| where EventID == 4672
+| project TimeGenerated, EventID, Account, Computer, IpAddress,
+          LogonType, Activity, ProcessName, TargetAccount
+| order by TimeGenerated asc
+
+
+// 10. Reconstruct the attack timeline
+SecurityEvent
+| where TimeGenerated between (
+    datetime(2026-09-23 14:10:00) ..
+    datetime(2026-09-23 14:30:00)
+)
+| where Account == "sara.khan"
+| project TimeGenerated, EventID, Account, Computer, IpAddress,
+          LogonType, Activity, TargetAccount, ProcessName
+| order by TimeGenerated asc
+
+
+// 11. Hunt for privileged group membership modification
+// Windows Event ID 4728 = member added to security-enabled global group
+SecurityEvent
+| where EventID == 4728
+| project TimeGenerated, EventID, Account, Computer, IpAddress,
+          Activity, TargetAccount, ProcessName
+| order by TimeGenerated asc
